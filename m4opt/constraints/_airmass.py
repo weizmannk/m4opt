@@ -38,10 +38,10 @@ class AirmassConstraint(Constraint):
         >>> from astropy.time import Time
         >>> from astropy import units as u
         >>> from m4opt.constraints import AirmassConstraint
-        >>> time = Time("2017-08-17T12:41:04Z")
+        >>> time = Time("2017-08-17T00:41:04Z")
         >>> target = SkyCoord.from_name("NGC 4993")
-        >>> location = EarthLocation.of_site("Las Campanas Observatory")
-        >>> constraint = AirmassConstraint(max=2)
+        >>> location = EarthLocation.of_site("Rubin Observatory")
+        >>> constraint = AirmassConstraint(min=1, max=3)
         >>> constraint(location, target, time)
         np.True_
     """
@@ -57,13 +57,13 @@ class AirmassConstraint(Constraint):
         self.boolean_constraint = boolean_constraint
 
     @override
-    def __call__(self, observer, target_coord, obstime):
+    def __call__(self, observer_location, target_coord, obstime):
         """
         Compute the airmass constraint.
 
         Parameters
         ----------
-        observer : `~astroplan.Observer`
+        observer_location : `~astropy.coordinates.EarthLocation`
             The observing location.
         target_coord : `~astropy.coordinates.SkyCoord`
             The celestial coordinates of the target.
@@ -75,7 +75,9 @@ class AirmassConstraint(Constraint):
         `numpy.ndarray`
             Boolean mask (if `boolean_constraint=True`) or scaled values (if `False`).
         """
-        altaz = target_coord.transform_to(AltAz(obstime=obstime, location=observer))
+        altaz = target_coord.transform_to(
+            AltAz(obstime=obstime, location=observer_location)
+        )
         secz = altaz.secz.value
 
         if self.boolean_constraint:

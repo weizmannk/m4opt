@@ -1,7 +1,7 @@
 from typing import Optional
 
 from astropy import units as u
-from astropy.coordinates import get_sun
+from astropy.coordinates import AltAz, get_sun
 
 from ..utils.typing_extensions import override
 from ._core import Constraint
@@ -31,9 +31,10 @@ class AtNightConstraint(Constraint):
         >>> from astropy.time import Time
         >>> from astropy import units as u
         >>> from m4opt.constraints import AtNightConstraint
-        >>> time = Time("2025-01-01T00:00:00Z")
-        >>> location = EarthLocation.of_site("Las Campanas Observatory")
-        >>> constraint = AtNightConstraint.twilight_nautical()
+        >>> time = Time("2017-08-17T00:41:04Z")
+        >>> target = SkyCoord.from_name("NGC 4993")
+        >>> location = EarthLocation.of_site("Rubin Observatory")
+        >>> constraint = AtNightConstraint.twilight_civil()
         >>> constraint(location, None, time)
         np.True_
     """
@@ -69,13 +70,13 @@ class AtNightConstraint(Constraint):
         return cls(max_solar_altitude=-18 * u.deg, **kwargs)
 
     @override
-    def __call__(self, observer, target_coord, obstime):
+    def __call__(self, observer_location, target_coord, obstime):
         """
         Compute the nighttime constraint.
 
         Parameters
         ----------
-        observer : `~astroplan.Observer`
+        observer_location : `~astropy.coordinates.EarthLocation`
             The observing location.
         target_coord : `~astropy.coordinates.SkyCoord`, optional
             The celestial coordinates of the target (not used in this constraint).
@@ -87,10 +88,10 @@ class AtNightConstraint(Constraint):
         `numpy.ndarray`
             Boolean mask indicating whether the Sun is below `max_solar_altitude`.
         """
-        solar_altitude = self._get_solar_altitudes(obstime, observer)
+        solar_altitude = self._get_solar_altitudes(obstime, observer_location)
         return solar_altitude <= self.max_solar_altitude
 
-    def _get_solar_altitudes(self, obstime, observer):
+    def _get_solar_altitudes(self, obstime, observer_location):
         """
         Compute the altitude of the Sun at the given times and location.
 
@@ -98,7 +99,7 @@ class AtNightConstraint(Constraint):
         ----------
         obstime : `~astropy.time.Time`
             The observation time.
-        observer : `~astroplan.Observer`
+        observer_location  : `~astropy.coordinates.EarthLocation`
             The observer location.
 
         Returns
@@ -106,13 +107,12 @@ class AtNightConstraint(Constraint):
         `~astropy.units.Quantity`
             The altitude of the Sun.
         """
-        if self.force_pressure_zero:
-            observer_old_pressure = observer.pressure
-            observer.pressure = 0
 
-        solar_altitude = observer.altaz(obstime, get_sun(obstime)).alt
-
-        if self.force_pressure_zero:
-            observer.pressure = observer_old_pressure
+        altaz_frame = AltAz(
+            obstime=obstime,
+            location=observer_location,
+            pressure=0 * u.hPa if self.force_pressure_zero else None,
+        )
+        solar_altitude = get_sun(obstime).transform_to(altaz_frame).alt
 
         return solar_altitude

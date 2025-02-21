@@ -27,10 +27,10 @@ class AltitudeConstraint(Constraint):
     >>> from astropy.time import Time
     >>> from astropy import units as u
     >>> from m4opt.constraints import AltitudeConstraint
-    >>> time = Time("2017-08-17T12:41:04Z")
+    >>> time = Time("2017-08-17T00:41:04Z")
     >>> target = SkyCoord.from_name("NGC 4993")
-    >>> location = EarthLocation.of_site("Las Campanas Observatory")
-    >>> constraint = AltitudeConstraint(min=30 * u.deg)
+    >>> location = EarthLocation.of_site("Rubin Observatory")
+    >>> constraint = AltitudeConstraint(min=20*u.deg, max=85*u.deg)
     >>> constraint(location, target, time)
     np.True_
     """
@@ -46,13 +46,13 @@ class AltitudeConstraint(Constraint):
         self.boolean_constraint = boolean_constraint
 
     @override
-    def __call__(self, observer, target_coord, obstime):
+    def __call__(self, observer_location, target_coord, obstime):
         """
         Compute the altitude constraint.
 
         Parameters
         ----------
-        observer : `~astroplan.Observer`
+        observer_location : `~astropy.coordinates.EarthLocation`
             The observing location.
         target_coord : `~astropy.coordinates.SkyCoord`
             The celestial coordinates of the target.
@@ -64,7 +64,9 @@ class AltitudeConstraint(Constraint):
         `numpy.ndarray`
             Boolean mask (if `boolean_constraint=True`) or scaled values (if `False`).
         """
-        altaz = target_coord.transform_to(AltAz(obstime=obstime, location=observer))
+        altaz = target_coord.transform_to(
+            AltAz(obstime=obstime, location=observer_location)
+        )
         alt = altaz.alt
 
         if self.boolean_constraint:
