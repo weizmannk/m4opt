@@ -1,26 +1,40 @@
+from importlib import resources
+
 import numpy as np
 from astropy import units as u
 from astropy.coordinates import SkyCoord
-from regions import RectangleSkyRegion
+from astropy.table import Table
 from synphot import Gaussian1D, SpectralElement
 
-from .. import skygrid
-from ..constraints import (
+from ... import skygrid
+from ...constraints import (
     EarthLimbConstraint,
     MoonSeparationConstraint,
     SunSeparationConstraint,
 )
-from ..dynamics import Slew
-from ..observer import TleObserverLocation
-from ..synphot import Detector
-from ..synphot.background import GalacticBackground, ZodiacalBackground
-from ._core import Mission
+from ...dynamics import Slew
+from ...observer import TleObserverLocation
+from ...synphot import Detector
+from ...synphot.background import GalacticBackground, ZodiacalBackground
+from .._core import Mission
+from .camera import UltrasatCameraFOV
+from . import data
+
+
+ultrasat_camera = UltrasatCameraFOV()
+
+
+def _read_skygrid():
+    table = Table.read(
+        resources.files(data) / "LCS_nonoverlapping_grid.csv",
+                        format="ascii.csv"
+    )
+    #grid_V45 =  table[table["V45"] == 1]
+    return SkyCoord(table["RA"], table["Dec"], unit=u.deg)
 
 ultrasat = Mission(
     name="ultrasat",
-    fov=RectangleSkyRegion(
-        center=SkyCoord(0 * u.deg, 0 * u.deg), width=14.28 * u.deg, height=14.28 * u.deg
-    ),
+    fov=ultrasat_camera.make_fov(),
     constraints=[
         EarthLimbConstraint(48 * u.deg),
         SunSeparationConstraint(70 * u.deg),
@@ -54,7 +68,7 @@ ultrasat = Mission(
         "2 43226   0.0007  47.5006 0003498 198.5164  84.4417  1.00271931 24622",
     ),
     # Sky grid optimized for ULTRASAT's wide field of view.
-    skygrid=skygrid.healpix(200 * u.deg**2),
+    skygrid=_read_skygrid(),
     # Slew model tailored for ULTRASAT's operational requirements.
     slew=Slew(
         max_angular_velocity=1 * u.deg / u.s,
@@ -65,7 +79,7 @@ ultrasat.__doc__ = r"""ULTRASAT, the Ultraviolet Transient Astronomy Satellite.
 
 `ULTRASAT <http://www.weizmann.ac.il/ultrasat>`_ is an Israeli ultraviolet 
 space telescope currently under development. It is designed to monitor the 
-transient sky with a wide-field imager (:arxiv:`2304.14482`).
+transient sky with a wide-field imager (:footcite:`2024ApJ...964...74S`).
 Expected to launch in 2027, ULTRASAT aims to provide continuous monitoring of
 large areas of the sky to detect and study transient astronomical events in the
 ultraviolet spectrum.
