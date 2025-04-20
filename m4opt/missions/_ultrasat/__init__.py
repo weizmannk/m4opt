@@ -6,7 +6,6 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from synphot import Gaussian1D, SpectralElement
 
-from ... import skygrid
 from ...constraints import (
     EarthLimbConstraint,
     MoonSeparationConstraint,
