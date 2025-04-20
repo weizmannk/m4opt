@@ -17,20 +17,19 @@ from ...observer import TleObserverLocation
 from ...synphot import Detector
 from ...synphot.background import GalacticBackground, ZodiacalBackground
 from .._core import Mission
-from .camera import UltrasatCameraFOV
 from . import data
-
+from .camera import UltrasatCameraFOV
 
 ultrasat_camera = UltrasatCameraFOV()
 
 
 def _read_skygrid():
     table = Table.read(
-        resources.files(data) / "LCS_nonoverlapping_grid.csv",
-                        format="ascii.csv"
+        resources.files(data) / "LCS_nonoverlapping_grid.csv", format="ascii.csv"
     )
-    #grid_V45 =  table[table["V45"] == 1]
+    # grid_V45 =  table[table["V45"] == 1]
     return SkyCoord(table["RA"], table["Dec"], unit=u.deg)
+
 
 ultrasat = Mission(
     name="ultrasat",

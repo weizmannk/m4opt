@@ -1,6 +1,7 @@
 import astropy.units as u
-from regions import Regions, RectangleSkyRegion, PolygonSkyRegion
 from astropy.coordinates import SkyCoord
+from regions import PolygonSkyRegion, RectangleSkyRegion, Regions
+
 
 class UltrasatCameraFOV:
     """
@@ -27,12 +28,12 @@ class UltrasatCameraFOV:
     N_PIXELS = 4738 * u.pixel
     SENSOR_SIZE_MM = PIXEL_SIZE * N_PIXELS  # 45.011 mm
     PLATE_SCALE = 5.4 * (u.arcsec / u.pixel)
-    
-    # Total angular size per detector (one tile) in arseconds
-    TILE_SIZE_ARCSEC = N_PIXELS  * PLATE_SCALE
 
-    def __init__(self, center_ra=0*u.arcsec, center_dec=0*u.arcsec):
-        self.center = SkyCoord(ra=center_ra, dec=center_dec, frame='icrs')
+    # Total angular size per detector (one tile) in arseconds
+    TILE_SIZE_ARCSEC = N_PIXELS * PLATE_SCALE
+
+    def __init__(self, center_ra=0 * u.arcsec, center_dec=0 * u.arcsec):
+        self.center = SkyCoord(ra=center_ra, dec=center_dec, frame="icrs")
         self.fov_regions = self.make_fov()
 
     def make_fov(self):
@@ -41,10 +42,10 @@ class UltrasatCameraFOV:
 
         # Four detectors in a 2x2 grid (assuming no gaps)
         offsets = [
-            (-offset_arcsec,  offset_arcsec),
-            ( offset_arcsec,  offset_arcsec),
+            (-offset_arcsec, offset_arcsec),
+            (offset_arcsec, offset_arcsec),
             (-offset_arcsec, -offset_arcsec),
-            ( offset_arcsec, -offset_arcsec),
+            (offset_arcsec, -offset_arcsec),
         ]
 
         fov_regions = []
@@ -53,15 +54,14 @@ class UltrasatCameraFOV:
             center_coord = SkyCoord(
                 ra=self.center.ra + d_ra * u.arcsec,
                 dec=self.center.dec + d_dec * u.arcsec,
-                frame="icrs"
+                frame="icrs",
             )
             rect = RectangleSkyRegion(
                 center=center_coord,
                 width=self.TILE_SIZE_ARCSEC,
-                height=self.TILE_SIZE_ARCSEC
+                height=self.TILE_SIZE_ARCSEC,
             )
             fov_regions.append(rect)
-
 
         return Regions(self.to_polygons(fov_regions))
 
@@ -76,6 +76,8 @@ class UltrasatCameraFOV:
             corners_ra = [ra - half_w, ra + half_w, ra + half_w, ra - half_w]
             corners_dec = [dec - half_h, dec - half_h, dec + half_h, dec + half_h]
             polygons.append(
-                PolygonSkyRegion(vertices=SkyCoord(ra=corners_ra*u.deg, dec=corners_dec*u.deg))
+                PolygonSkyRegion(
+                    vertices=SkyCoord(ra=corners_ra * u.deg, dec=corners_dec * u.deg)
+                )
             )
         return polygons
