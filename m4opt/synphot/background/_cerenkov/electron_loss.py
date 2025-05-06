@@ -52,7 +52,7 @@ def get_electron_energy_loss(material="si02_suprasil_2a", plot=False):
     hbar = 1.05e-27  # erg*s
 
     g = 1 + 10 ** np.arange(-3, 4.01, 0.01)
-    b = np.sqrt(1 - 1 / g**2)
+    b = np.sqrt(1 - 1.0 / g**2)
     Ek = (g - 1) * me * c**2 / 1.6e-6  # MeV
 
     def calc_dEdX(Z, A):
@@ -66,10 +66,10 @@ def get_electron_energy_loss(material="si02_suprasil_2a", plot=False):
             / 1.6e-6
             / b**2
             * (
-                np.log(((g**2 - 1) * me * c**2 / Iav) ** 2 / 2 / (1 + g))
-                - (2 / g - 1 / g**2) * np.log(2)
-                + 1 / g**2
-                + (1 - 1 / g) ** 2 / 8
+                np.log(((g**2 - 1) * me * c**2 / Iav) ** 2 / 2.0 / (1 + g))
+                - (2.0 / g - 1.0 / g**2) * np.log(2)
+                + 1.0 / g**2
+                + (1 - 1.0 / g) ** 2 / 8
             )
         )
         dEdXI = np.maximum(dEdXI, 0)
@@ -85,13 +85,13 @@ def get_electron_energy_loss(material="si02_suprasil_2a", plot=False):
             * Ek
             / b
             / c
-            * (np.log(183 / Z ** (1 / 3)) + 1 / 8)
+            * (np.log(183 / Z ** (1.0 / 3)) + 1.0 / 8)
         )
         return dEdXI + dEdXB
 
-    dEdXSi = calc_dEdX(14, 28)
-    dEdXO = calc_dEdX(8, 16)
-    dEdXAl = calc_dEdX(13, 27)
+    dEdXSi = calc_dEdX(14, 28)  # Silicon
+    dEdXO = calc_dEdX(8, 16)  # Oxygen
+    dEdXAl = calc_dEdX(13, 27)  # Aluminium
 
     material = material.lower()
     if material in {"sio2", "silica", "si02_suprasil_2a"}:

@@ -1,12 +1,12 @@
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
+from astropy.constants import c, h
 from scipy.interpolate import CubicSpline
 
 from .electron_loss import get_electron_energy_loss
 from .geostat_electron_flux import geostat_electrons_spec_flux
 from .refraction_index import get_refraction_index
-
-RAD = 180.0 / np.pi  # Convert steradians to arcsec^2
 
 
 class CerenkovBackground:
@@ -22,26 +22,77 @@ class CerenkovBackground:
     ----------
     material : str
         Material name ('si02_suprasil_2a', 'silica', or 'sapphire').
+        Default is 'si02_suprasil_2a'.
+
     flux_option : str
-        Column name from the electron flux table (e.g., 'DailyMax_75Flux').
+        Column name from the electron flux table. Available options:
+        ['DailyMin_MeanFlux',
+        'DailyMax_MeanFlux',
+        'DailyMin_95Flux',
+        'DailyMax_95Flux',
+        'DailyMax_50Flux',
+        'DailyMax_75Flux',
+        'DailyMin_50Flux',
+        'DailyMin_75Flux']
+        Default is 'DailyMax_75Flux'.
+
     plot : bool, optional
         If True, generate diagnostic plots when calling `evaluate()`.
+        Default is False.
+
+    Returns
+    -------
+    result : dict
+        A dictionary containing the following fields:
+        - 'Lam' : np.ndarray
+            Wavelength array [Å] (Angström, equivalent to Ang or \(\AA\)).
+        - 'Int' : np.ndarray
+            Cerenkov intensity [count/cm^2/s/sr/μm].
+        - 'Int_Units' : str
+            Units of intensity, 'count/cm^2/s/sr/μm'.
+        - 'IntAA' : np.ndarray
+            Intensity per arcsecond squared [count/cm^2/s/arcsec^2/Ang].
+        - 'IntAA_Units' : str
+            Units for 'IntAA', 'count/cm^2/s/arcsec^2/Ang'.
+        - 'IntFA' : np.ndarray
+            Energy flux in erg/cm^2/s/arcsec^2/Ang.
+        - 'IntFA_Units' : str
+            Units for 'IntFA', 'erg/cm^2/s/arcsec^2/Ang'.
+        - 'n' : np.ndarray
+            Refractive index values for each wavelength.
+        - 'Lum' : np.ndarray
+            Luminosity per wavelength [count/cm^2/s/μm].
+        - 'Int_arcsec_Units' : str
+            Optional label for display: 'counts cm$^{-2}$ s$^{-1}$ arcsec$^{-2}$ \AA$^{-1}$'.
+
+        res_el : dict
+            Dictionary containing electron energy ('E') and flux ('F').
 
     Attributes
     ----------
     lam : np.ndarray
-        Wavelength array [Å].
-    intensity : np.ndarray
+        Wavelength array [Ang].
+
+    Int : np.ndarray
         Cerenkov intensity spectrum [count/cm^2/s/sr/μm].
-    n_arrayls
-      : np.ndarray
+
+    IntAA : np.ndarray
+         Cerenkov intensity spectrum Intensity [count/cm^2/s/arcsec^2/Ang].
+    IntFA : np.ndarray
+            Energy flux in erg/cm^2/s/arcsec^2/Ang.
+
+    n_array : np.ndarray
         Refractive index array corresponding to `lam`.
+
     lum_array : np.ndarray
         Luminosity per wavelength bin [count/cm^2/s/μm].
+
     res_el : dict
         Dictionary containing electron energy ('E') and flux ('F').
+
     cint_data : dict
         Cumulative intensity and angle data for plotting.
+
     angular_data : dict
         Angular distribution data for plotting.
 
@@ -61,8 +112,9 @@ class CerenkovBackground:
     Examples
     --------
     >>> from m4opt.synphot.background import CerenkovBackground
-    >>> cerenkov = CerenkovBackground(material='si02_suprasil_2a', plot=False)
+    >>> cerenkov = CerenkovBackground(material='si02_suprasil_2a', flux_option="DailyMax_75Flux", plot=False)
     >>> result, res_el = cerenkov.evaluate()
+    >>> Wavelength, Int_m4opt = result["Lam"], result["Int_m4opt"]
     >>> cerenkov.plot()
     >>> cerenkov.plot_flux()
     >>> cerenkov.plot_cumulative_energy()
@@ -71,7 +123,7 @@ class CerenkovBackground:
     .. plot::
     :caption: Cerenkov intensity vs. wavelength
 
-    from cerenkov_background import CerenkovBackground
+    from m4opt.synphot.background import CerenkovBackground
     cerenkov = CerenkovBackground(material='si02_suprasil_2a')
     cerenkov.evaluate()
     cerenkov.plot()
@@ -84,27 +136,39 @@ class CerenkovBackground:
         self.flux_option = flux_option
         self.enable_plot = plot
         self.lam = None
-        self.intensity = None
+        self.Int = None
+        self.IntAA = None
+        self.IntFA = None
         self.n_array = None
         self.lum_array = None
         self.res_el = None
         self.cint_data = None
         self.angular_data = None
 
-        # Kruk et al. reference, figure 6
+        # Kruk et al. 2016 reference, figure 6, https://iopscience.iop.org/article/10.1088/1538-3873/128/961/035005
         self.F = 10 ** np.array([9, 8, 7, 6, 4, 1])
         self.Ee = np.array([0.001, 0.05, 0.25, 0.7, 2.5, 8])
 
     def evaluate(self):
-        # Set material properties
-        if self.material in ["silica", "sio2", "si02_suprasil_2a"]:
-            n_val, rho = 1.5, 2.2
-        elif self.material == "sapphire":
-            n_val, rho = 1.75, 4.0
-        else:
+        """
+        Evaluates the Cerenkov background for the specified material and electron flux.
+        Returns intensity and related quantities.
+        """
+
+        # Material properties
+        material_properties = {
+            "silica": (1.5, 2.2),
+            "sio2": (1.5, 2.2),
+            "si02_suprasil_2a": (1.5, 2.2),
+            "sapphire": (1.75, 4.0),
+        }
+
+        if self.material not in material_properties:
             raise ValueError("Unknown material option")
 
-        # 1. Retrieve electron flux data (AE9 model)
+        n_val, rho = material_properties[self.material]
+
+        # Retrieve electron flux data (AE9 model)
         flux_data = geostat_electrons_spec_flux(source="AE9")
         column_names = flux_data["columns"][1:]
         Ee1 = flux_data["data"]["Energy"]
@@ -114,7 +178,7 @@ class CerenkovBackground:
         if self.enable_plot:
             self._plot_flux(Ee1, flux_data, column_names)
 
-        # 2. Interpolate over a finer energy grid
+        # Interpolate over a finer energy grid
         ee = np.logspace(np.log10(0.04), np.log10(8), 1000)
         cs_flux = CubicSpline(Ee1, F1, bc_type="natural", extrapolate=True)
         Fe = cs_flux(ee)
@@ -123,14 +187,14 @@ class CerenkovBackground:
         gm = 1 + em / 0.511
         bm = np.sqrt(1 - 1.0 / gm**2)
         ge = 1 + ee / 0.511
-        be = np.sqrt(1 - 1 / ge**2)
+        be = np.sqrt(1 - 1.0 / ge**2)
 
         cs_fm = CubicSpline(ee, Fe, bc_type="natural", extrapolate=True)
         Fm = cs_fm(em)
 
         fC = np.maximum(0, 1 - 1.0 / n_val**2 / bm**2)
 
-        # 3. Calculate dE/dX (energy loss)
+        # Calculate dE/dX (energy loss)
         Ek, dEdX = get_electron_energy_loss(self.material, self.enable_plot)
         cs_dEdX = CubicSpline(Ek, 1.0 / dEdX, bc_type="natural", extrapolate=True)
         gEE = cs_dEdX(em)
@@ -149,6 +213,7 @@ class CerenkovBackground:
 
         self.cint_data = {"ee": ee, "Cint": Cint, "the": the, "FlagReal": FlagReal}
 
+        # Angular distribution and intensity
         thM = np.arccos(1.0 / n_val)
         th = thM * 10 ** np.arange(-2, 0.01, 0.01)
         thm = 0.5 * (th[:-1] + th[1:])
@@ -167,7 +232,6 @@ class CerenkovBackground:
             / cs_gEE(1)
         )
         qCth = int_qC * np.diff(th)
-        # ICth = np.concatenate(([0], np.cumsum(int_qC * np.diff(th)))) / qCth
 
         # Pad qCth to match cumulative sum length
         qCth_padded = np.concatenate(([0], qCth))
@@ -177,66 +241,101 @@ class CerenkovBackground:
 
         self.angular_data = {"th": th, "ICth": ICth, "thm": thm, "eth": eth, "thM": thM}
 
-        # 4. Get wavelength-dependent refractive index
+        # Get wavelength-dependent refractive index
         Lam, n, _ = get_refraction_index(self.material)
         Nn = len(n)
         IC1mu_array = np.full(Nn, np.nan)
         L1mu_array = np.full(Nn, np.nan)
 
         for i in range(Nn):
-            # bMi = 1 / n[i]
-            # gMi = 1 / np.sqrt(1 - bMi ** 2)
             gmi = 1 + em / 0.511
             bmi = np.sqrt(1 - 1.0 / gmi**2)
 
             fCi = np.maximum(0, 1 - 1 / n[i] ** 2 / bmi**2)
             intg_i = gEE * Fm * fCi
-            Lnorm = 2 * np.pi / 137 / rho / (1e-8 * Lam[i]) ** 2 * cs_intg(1) * 1e-4
+            Lnorm = (
+                2 * np.pi / 137 / rho / (1e-8 * Lam[i]) ** 2 * cs_intg(1)
+            )  # count/cm^2/s/cm(wave)
+            Lnorm = Lnorm * 1e-4  # count/cm^2/s/micron(wave)
             int_val = np.sum(intg_i * np.diff(ee)) / cs_intg(1)
 
-            L1mu_array[i] = int_val * Lnorm
-            IC1mu_array[i] = L1mu_array[i] / (2 * np.pi * n[i] ** 2)
+            L1mu_array[i] = int_val * Lnorm  # at lambda=1mu
+            IC1mu_array[i] = L1mu_array[i] / (
+                2 * np.pi * n[i] ** 2
+            )  # intensity at 1 micron
 
+        # Convert steradians to arcsec^2 and photon flux to energy flux
+        RAD = 180.0 / np.pi  # Conversion factor from radians to degrees
+        int_aa = (
+            IC1mu_array / 1e4 / ((RAD * 3600) ** 2)
+        )  # Convert intensity to arcseconds squared
+
+        Erg2A = 1.9864e-8  # Conversion factor from erg to Angstrom
+        Erg2Hz = 1.5092e26  # Conversion factor from erg to Hz
+
+        ErgE = Erg2A / Lam  # Energy per wavelength
+        Freq_Hz = ErgE * Erg2Hz  # Frequency corresponding to the energy
+
+        speed_c = c.to(u.cm / u.s).to_value()  # Speed of light in cm/s
+        planck_h = h.to(u.erg * u.s).to_value()  # Planck's constant in erg.s
+
+        Flux_mJy = (
+            int_aa * planck_h * Freq_Hz * (speed_c * 1e8 / (Freq_Hz**2)) / 1e-26
+        )  # Flux in mJy
+        int_fa = Flux_mJy / ((speed_c * 1e8 / (Freq_Hz**2)) / 1e-26)  # Flux per energy
+
+        # Store intermediate values in the object
         self.lam = Lam
-        self.intensity = IC1mu_array
+        self.Int = IC1mu_array
         self.n_array = n
         self.lum_array = L1mu_array
+        self.IntAA = int_aa
+        self.IntFA = int_fa
 
+        Int_m4opt = self.Int * (u.count * u.cm**-2 * u.s**-1 * u.sr**-1 * u.micron**-1)
+        Int_m4opt = Int_m4opt.to(
+            u.count * u.cm**-2 * u.s**-1 * u.sr**-1 * u.Angstrom**-1
+        )
+        # Result dictionary
         result = {
             "Lam": Lam,
             "Int": IC1mu_array,
             "Int_Units": "count/cm^2/s/sr/μm",
-            "IntAA": IC1mu_array / 1e4 / ((RAD * 3600) ** 2),
-            "IntAA_Units": "count/cm^2/s/arcsec²/Ang",
-            "Int_arcsec_Units": r"counts cm$^{-2}$ s$^{-1}$ arcsec$^{-2}$ \AA$^{-1}$",
-            "IntFA_Units": "erg/cm^2/s/arcsec²/Ang",
+            "Int_m4opt": Int_m4opt,
+            "IntAA": int_aa,
+            "IntAA_Units": "count/cm^2/s/arcsec^2/Ang",
+            "IntFA": int_fa,
+            "IntFA_Units": "erg/cm^2/s/arcsec^2/Ang",
             "n": n,
             "Lum": L1mu_array,
+            "Int_arcsec_Units": "counts/cm^2/s/arcsec^2/Ang",
         }
 
         return result, self.res_el
 
     def _plot_flux(self, Ee1, flux_data, column_names):
-        colors = plt.cm.viridis(np.linspace(0, 1, len(column_names)))
-        plt.figure()
-        plt.loglog(self.Ee, self.F, "r", label="Reference from Kruk et al.")
+        colors = plt.cm.tab10(np.linspace(0, 1, len(column_names)))
+        plt.figure(figsize=(8, 6))
+        plt.loglog(self.Ee, self.F, "r", label="Reference from Kruk et al. 2016")
         for i, name in enumerate(column_names):
-            plt.loglog(Ee1, flux_data["data"][name], label=name, color=colors[i])
+            plt.loglog(Ee1, flux_data["data"][name], label=rf"{name}", color=colors[i])
         plt.axis([1e-2, 10, 10, 1e9])
-        plt.grid(True)
+        plt.grid(True, which="both", ls="--", linewidth=0.5)
         plt.legend()
         plt.xlabel("Electron Energy [MeV]")
-        plt.ylabel("Flux [counts/cm^2/s]")
+        plt.ylabel(r"Flux [counts / cm$^2$ / s]")
         plt.title("Electron Flux (AE9 Model)")
+        plt.tight_layout()
         plt.show()
 
     def plot(self):
-        if self.lam is None or self.intensity is None:
+        if self.lam is None or self.Int is None:
             raise ValueError("Run evaluate() first.")
         plt.figure(figsize=(8, 5))
-        plt.plot(self.lam, self.intensity)
+        # plt.plot(self.lam, self.Int)
+        plt.plot(self.lam, self.IntFA)
         plt.xlabel(r"Wavelength [$\AA$]")
-        plt.ylabel(r"Cerenkov Intensity [count/$cm^2$/s/sr/μm]")
+        plt.ylabel(r"Cerenkov Intensity [erg cm$^{-2}$ s$^{-1}$ arcsec$^2$ $\AA$]")
         plt.title(r"Cerenkov Intensity vs. Wavelength")
         plt.grid(True)
         plt.show()
